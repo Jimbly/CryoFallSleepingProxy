@@ -2,7 +2,7 @@
 UDP Proxy for CryoFall that suspends the process when no one is connected.
 
 Simple, no-dependency, Windows instructions:
-* Download and unzip CryoFallSleepingProxy.zip from [Releases](https://github.com/Jimbly/CryoFallSleepingProxy/releases) (includes a Windows binary of Node.js)
+* Download and unzip `CryoFallSleepingProxy.zip` from [Releases](https://github.com/Jimbly/CryoFallSleepingProxy/releases) (includes a Windows binary of Node.js)
 * By default, CryofallSleepingProxy will listen on port 6000 and forward to port 6010, so edit your CryoFall server's settings to listen on 6010.
   * Alternatively, edit `index.js` (in Notepad or your favorite text editor) and change the ports as needed.
 * Start your CryoFall server
