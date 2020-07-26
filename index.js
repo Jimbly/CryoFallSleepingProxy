@@ -1,3 +1,4 @@
+const assert = require('assert');
 const child_process = require('child_process');
 const proxy = require('udp-proxy');
 let options = {
@@ -13,9 +14,27 @@ let options = {
   timeOutTime: 10000
 };
 
-const CHILD_PID = 1097180;
+function detectDotNetPID() {
+  // Alternative: spawn the process here, something like:
+  // return child_process.spawn('dotnet CryoFall_Server.dll load', { stdio: 'inherit' }).pid;
 
-const IDLE_TIME = 30 * 60 * 1000;
+  let output = child_process.execSync('tasklist /fi "imagename eq dotnet.exe" /fo csv /nh', { encoding: 'utf8' });
+  let lines = output.trim().split('\n');
+  if (lines.length !== 1 || !lines[0].startsWith('"dotnet.exe"')) {
+    console.log(output);
+    throw new Error('Could not find single running dotnet.exe process');
+  }
+  let columns = lines[0].split('","');
+  assert.equal(columns.length, 5);
+  return Number(columns[1]);
+}
+
+const CHILD_PID = detectDotNetPID(); // Can explicitly specify a process ID here
+
+const CMD_WAKE_UP = `bin\\pssuspend64.exe -r ${CHILD_PID}`;
+const CMD_SLEEP = `bin\\pssuspend64.exe ${CHILD_PID}`;
+
+const IDLE_TIME = 60 * 60 * 1000;
 let timeout;
 
 let server_up = false;
@@ -25,10 +44,21 @@ let server = proxy.createServer(options);
 
 // this should be obvious
 server.on('listening', function (details) {
-  console.log('CryoFallProxy }>=<{ by: Jimbly');
+  console.log('UDP Sleeping Proxy by: Jimbly');
   console.log(`udp-proxy-server ready on ${details.server.family}  ${details.server.address}:${details.server.port}`);
   console.log(`traffic is forwarded to ${details.target.family}  ${details.target.address}:${details.target.port}`);
 });
+
+function runCmd(cmd) {
+  let ret = child_process.spawnSync(cmd, { encoding: 'utf8', shell: true });
+  let { stdout, stderr, status, error } = ret;
+  if (error || stderr) {
+    console.log(`ERROR WAKING/SLEEPING (exit status=${status})`);
+    console.log(error, stderr, stdout);
+  } else {
+    console.log(stdout);
+  }
+}
 
 function checkShutdown() {
   timeout = null;
@@ -38,14 +68,7 @@ function checkShutdown() {
   }
   if (server_up) {
     console.log('Timeout expired - SERVER GOING TO SLEEP');
-    let ret = child_process.spawnSync('bin/pssuspend64.exe', [String(CHILD_PID)], { encoding: 'utf8' });
-    let { stdout, stderr, status, error } = ret;
-    if (error || stderr) {
-      console.log(`ERROR SLEEPING SERVER (exit status=${status})`);
-      console.log(error, stderr, stdout);
-    } else {
-      console.log(stdout);
-    }
+    runCmd(CMD_SLEEP);
     server_up = false;
   }
 }
@@ -55,30 +78,13 @@ server.on('bound', function (details) {
   console.log(`Proxying from ${details.peer.address}:${details.peer.port} via ${details.route.address}:${details.route.port}, #connections=${Object.keys(server.connections).length}`);
   if (!server_up) {
     console.log('Client connect - SERVER WAKING UP');
-    let ret = child_process.spawnSync('bin/pssuspend64.exe', ['-r', String(CHILD_PID)], { encoding: 'utf8' });
-    let { stdout, stderr, status, error } = ret;
-    if (error || stderr) {
-      console.log(`ERROR WAKING SERVER (exit status=${status})`);
-      console.log(error, stderr, stdout);
-    } else {
-      console.log(stdout);
-    }
+    runCmd(CMD_WAKE_UP);
     server_up = true;
   }
   if (timeout) {
     clearTimeout(timeout);
     timeout = null;
   }
-});
-
-// 'message' is emitted when the server gets a message
-server.on('message', function (message, sender) {
-//    console.log('message from ' + sender.address + ':' + sender.port);
-});
-
-// 'proxyMsg' is emitted when the bound socket gets a message and it's send back to the peer the socket was bound to
-server.on('proxyMsg', function (message, sender, peer) {
-//    console.log('answer from ' + sender.address + ':' + sender.port);
 });
 
 // 'proxyClose' is emitted when the socket closes (from a timeout) without new messages
